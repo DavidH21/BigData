@@ -1,10 +1,6 @@
 // Used to get Playform Spec
 lscpu
 
-
-
-
-
 // Used to go in Bash Code
 ssh [username]@129.150.205.28
 
