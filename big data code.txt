@@ -1,0 +1,113 @@
+// Used to get Playform Spec
+lscpu
+
+
+
+
+
+// Used to go in Bash Code
+ssh [username]@129.150.205.28
+
+// Used to list directories
+hdfs dfs –ls
+
+// Used to download the dataset
+wget -O crime_data https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv?accessType=DOWNLOAD 
+
+// Make directory to contain crime_data
+-mkdir chicago_crime
+-put crime_data chicago_crime
+
+// remove crime_data from local server to maintain storage.
+rm crime_data
+
+// Check if crime_data is in chicago_crime directory
+hdfs dfs -ls chicago_crime
+
+// HDFS comman to make beeline command work
+hdfs dfs -chmod -R o+w .
+
+// In different terminal
+
+// Used to go in Bash Code
+ssh [username]@129.150.205.28
+
+// Connect to hive
+!connect jdbc:hive2://cis4560-bdcsce-4.compute-608214094.oraclecloud.internal:2181,cis4560-bdcsce-2.compute-608214094.oraclecloud.internal:2181,cis4560-bdcsce-3.compute-608214094.oraclecloud.internal:2181/;serviceDiscoveryMode=zooKeeper;zooKeeperNamespace=hiveserver2?tez.queue.name=interactive bdcsce_admin
+
+// Connect to your database
+use [username]
+
+// Create an external table to contain the crime_data in a readable format
+CREATE EXTERNAL TABLE IF NOT EXISTS crimes(ID STRING, Case_Number STRING, Case_Date STRING, Block STRING, IUCR STRING, Primary_Type STRING, Description STRING, Location_Description STRING, Arrest BOOLEAN, Domestic BOOLEAN, Beat STRING, District STRING, Ward STRING, Community_Area STRING, FBI_Code STRING, X_Coordinate STRING, Y_Coordinate STRING, Year STRING, Updated_On STRING, Latitude STRING, Longitude STRING, Location STRING) 
+ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' 
+LOCATION '/user/mescob33/chicago_crime' TBLPROPERTIES
+('skip.header.line.count'='2');
+
+// Verify if table was created
+show tables;
+
+// Determine top 5 crime most committed
+SELECT primary_type, COUNT(primary_type) as total from crimes GROUP BY primary_type ORDER BY total DESC limit 5;
+
+// Retrieving primary_type, description, and total count
+SELECT primary_type, description, COUNT(description) as total from crimes GROUP BY primary_type, description ORDER BY total DESC limit 10;
+
+// Finding which block has the highest crime
+SELECT block, COUNT(block) as total from crimes GROUP BY block ORDER BY total DESC limit 10;
+
+// What crimes are committed in Oshare St.
+SELECT primary_type, COUNT (primary_type) AS total, description from crimes WHERE block == '100XX W OHARE ST' GROUP BY primary_type, description ORDER BY total DESC limit 10;
+
+// Finding the arrest ratio
+select arrest, count(arrest) as (arrest_count) from crimes group by arrest;
+
+// Finding the location where crimes happen
+select location_description, count(location_description) as Location_Description_Count from crimes group by location_description order by location_description_count desc limit 10;
+
+// Different Hive terminal
+
+// Create table for visualization
+CREATE TABLE IF NOT EXISTS battery_occurence ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' AS select * from crimes where primary_type = 'BATTERY'; 
+
+
+// Create the severity table
+ DROP TABLE IF EXISTS severity;
+--create the severity table by selecting from the battery_occurence table
+CREATE TABLE severity
+ROW FORMAT DELIMITED FIELDS TERMINATED BY ','
+STORED AS TEXTFILE LOCATION '/user/mescob33/chicago_crime/severity_table'
+AS
+SELECT *, IF((description) == 'SIMPLE', 'Mild', IF((description) == 'DOMESTIC BATTERY SIMPLE', 'Moderate', 'Severe')) AS crime_severity
+FROM battery_occurence;
+
+// Show if severity table exists in bash
+hdfs dfs -ls chicago_crime/severity_table
+
+// download the file to create visualization
+hdfs dfs -get /user/mescob33/chicago_crime/severity_table/000001_0
+
+// Different terminal to analyze narco
+
+// Make narco directory
+hdfs dfs -mkdir narco
+
+// In beeline
+// create table 
+CREATE TABLE IF NOT EXISTS narcotics ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' AS select id, block, primary_type, description, latitude, longitude, case_date from crimes where primary_type = 'NARCOTICS';
+
+// Describe table
+DESCRIBE narcotics;
+
+// Use pig
+pig -useHCatalog
+
+// load hive data into pig
+data = LOAD 'mescob33.narcotics' using org.apache.hive.hcatalog.pig.HCatLoader();
+
+// Filter the data to only contain information where the description is 'POSS: CANNABIS 30GMS OR LESS' and limit the results to 50,000 records
+narco = FILTER data BY description == 'POSS: CANNABIS 30GMS OR LESS';
+limit_narco = LIMIT narco 50000;
+
+// store output into new file in HDFS
+STORE narco INTO 'narco/c' USING PigStorage(',');
